@@ -15,6 +15,8 @@
 import json
 import hashlib
 from datetime import datetime
+from pathlib import Path
+from types import SimpleNamespace
 import yaml
 
 
@@ -88,6 +90,31 @@ def get_method_hash(method, file, project_id=None):
     return hashlib.sha224(_fmname.encode('utf-8')).hexdigest()
 
 
+def get_path_hash(path, project_id=None, use_new_path=False):
+    """
+    Compute a file hash for a path in the working tree by mimicking the
+    pydriller file object expected by get_file_hash.
+    """
+    rel_path = Path(path).as_posix()
+    pseudo_file = SimpleNamespace(
+        old_path=rel_path,
+        new_path=rel_path,
+        filename=Path(rel_path).name,
+    )
+    return get_file_hash(pseudo_file, project_id, use_new_path)
+
+
+def get_path_hashes(path, project_id=None):
+    """
+    Convenience helper returning both the standard hash (old_path) and the
+    merge_hash (new_path) for a working-tree path.
+    """
+    return {
+        'hash': get_path_hash(path, project_id, use_new_path=False),
+        'merge_hash': get_path_hash(path, project_id, use_new_path=True),
+    }
+
+
 def get_author_hash(email):
     return hashlib.sha224(email.encode('utf-8')).hexdigest()
 
@@ -112,9 +139,9 @@ def format_commit(com, project_id):
         'is_merge': 1 if com.merge else 0,
         'timestamp': com.author_date.timestamp(),
         'project_id': project_id,
-        'dmm_unit_complexity': com.dmm_unit_complexity if com.dmm_unit_complexity else -1,
-        'dmm_unit_interfacing': com.dmm_unit_interfacing if com.dmm_unit_interfacing else -1,
-        'dmm_unit_size': com.dmm_unit_size if com.dmm_unit_size else -1,
+        'dmm_unit_complexity': getattr(com, 'dmm_unit_complexity', None) or -1,
+        'dmm_unit_interfacing': getattr(com, 'dmm_unit_interfacing', None) or -1,
+        'dmm_unit_size': getattr(com, 'dmm_unit_size', None) or -1,
     }
 
 

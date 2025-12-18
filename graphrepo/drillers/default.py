@@ -26,6 +26,13 @@ from graphrepo.config import Config
 from graphrepo.logger import Logger
 LG = Logger()
 
+SKIP_EXTENSIONS = {
+    'png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'bmp', 'tiff', 'mp4', 'mov', 'webm',
+    'mp3', 'wav', 'ogg', 'flac', 'zip', 'gz', 'bz2', 'xz', '7z', 'tar', 'pdf',
+    'woff', 'woff2', 'ttf', 'otf', 'map', 'lock'
+}
+MAX_DIFF_LENGTH = 200000  # skip huge diffs/bundles to avoid stalls
+
 
 class DefaultDriller():
     """DefaultDriller class - parses a git repo and uses the models
@@ -144,21 +151,34 @@ class DefaultDriller():
             branches_com.append(
                 utl.format_branch_commit(br_['hash'], com['hash']))
         for file in commit.modifications:
+            fname = file.filename or ""
+            lower_name = fname.lower()
+            ext = lower_name.rsplit('.', 1)[-1] if '.' in lower_name else ''
+            diff_len = len(file.diff) if file.diff else 0
+
+            # Skip known heavy/binary assets, huge diffs, or minified bundles to avoid stalls.
+            if ext in SKIP_EXTENSIONS or '.min.' in lower_name or diff_len > MAX_DIFF_LENGTH:
+                continue
+
             fl_ = utl.format_file(file, self.config.ct.project_id)
             files.append(fl_)
             com_files.append(utl.format_commit_file(
                 com['hash'], file,
                 timestamp, self.config.ct.project_id, self.config.ct.index_code))
-            for method in file.changed_methods:
-                met = utl.format_method(
-                    method, file, self.config.ct.project_id)
-                methods.append(met)
-                files_methods.append(
-                    utl.format_file_method(fl_['hash'], met['hash'])
-                )
-                com_methods.append(
-                    utl.format_commit_method(com['hash'], met['hash'],
-                                             method, timestamp))
+            if self.config.ct.index_code:
+                changed_methods = getattr(file, 'changed_methods', None)
+                if changed_methods is None:
+                    changed_methods = getattr(file, 'methods', [])
+                for method in changed_methods:
+                    met = utl.format_method(
+                        method, file, self.config.ct.project_id)
+                    methods.append(met)
+                    files_methods.append(
+                        utl.format_file_method(fl_['hash'], met['hash'])
+                    )
+                    com_methods.append(
+                        utl.format_commit_method(com['hash'], met['hash'],
+                                                 method, timestamp))
 
     def data_dot_dict(self, commits, parents, devs, dev_com, branches,
                       branches_com, files, com_files,
@@ -188,6 +208,10 @@ class DefaultDriller():
       try:
         b_utl.merge_files(self.graph, self.config.ct)
       except Exception as exc:
+        # If APOC is missing, skip merges gracefully.
+        if "Procedure.ProcedureNotFound" in str(exc):
+          print("APOC not installed; skipping merge step.")
+          return
         LG.log_and_raise(exc)
       else:
         return

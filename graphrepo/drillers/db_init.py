@@ -21,3 +21,4 @@ def create_indices(graph, hash_index=True):
     utils.create_index_commits(graph, hash_index)
     utils.create_index_files(graph, hash_index)
     utils.create_index_methods(graph, hash_index)
+    utils.create_index_categories(graph)

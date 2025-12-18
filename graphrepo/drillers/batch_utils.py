@@ -137,6 +137,68 @@ def index_commit_method(graph, cm, batch_size=100):
         graph.run(query, cf=b)
 
 
+def index_imports(graph, imports, project_id, batch_size=100):
+    """
+    Batch MERGE IMPORTS relationships between File nodes.
+    """
+    query = """
+        UNWIND $rels AS rel
+        MATCH (src:File {project_id: $pid})
+        WHERE src.merge_hash = rel.src_merge_hash OR src.hash = rel.src_hash
+        MATCH (dst:File {project_id: $pid})
+        WHERE dst.merge_hash = rel.dst_merge_hash OR dst.hash = rel.dst_hash
+        MERGE (src)-[:IMPORTS]->(dst)
+    """
+    for b in batch(imports, batch_size):
+        graph.run(query, rels=b, pid=project_id)
+
+
+def set_file_keywords(graph, keyword_rows, project_id, batch_size=100):
+    """
+    Batch SET keywords on File nodes. Does not create nodes.
+    """
+    query = """
+        UNWIND $rows AS row
+        MATCH (f:File {project_id: $pid})
+        WHERE f.merge_hash = row.merge_hash OR f.hash = row.hash
+        SET f.keywords = row.keywords
+    """
+    for b in batch(keyword_rows, batch_size):
+        graph.run(query, rows=b, pid=project_id)
+
+
+def index_categories(graph, categories, project_id, batch_size=100):
+    """
+    Batch MERGE RepoCategory nodes keyed by project_id + name.
+    """
+    query = """
+        UNWIND $rows AS row
+        MERGE (c:RepoCategory {project_id: $pid, name: row.name})
+          ON CREATE SET c.description = row.description, c.url = row.url
+          ON MATCH SET c.description = row.description, c.url = row.url
+    """
+    for b in batch(categories, batch_size):
+        graph.run(query, rows=b, pid=project_id)
+
+
+def index_file_categories(graph, relations, project_id, category_project_id=None, batch_size=100):
+    """
+    Batch MERGE BELONGS_TO_REPO_CATEGORY edges from File to RepoCategory.
+    Allows linking files in one project_id to categories in another via category_project_id.
+    """
+    cat_pid = category_project_id or project_id
+    query = """
+        UNWIND $rels AS rel
+        MATCH (f:File {project_id: $pid})
+        WHERE f.merge_hash = rel.merge_hash OR f.hash = rel.hash
+        MATCH (c:RepoCategory {project_id: $cat_pid, name: rel.category})
+        MERGE (f)-[r:BELONGS_TO_REPO_CATEGORY]->(c)
+        SET r.confidence = rel.confidence
+    """
+    for b in batch(relations, batch_size):
+        graph.run(query, rels=b, pid=project_id, cat_pid=cat_pid)
+
+
 def create_index_authors(graph):
     query = (
         "CREATE INDEX index_developer_hash IF NOT EXISTS "
@@ -215,6 +277,20 @@ def create_index_methods(graph, hash=True):
         "FOR (n:Method) ON (n.project_id)"
     )
     graph.run(pid_q)
+
+
+def create_index_categories(graph):
+    unique_name = (
+        "CREATE CONSTRAINT unique_repocategory_project_name IF NOT EXISTS "
+        "FOR (n:RepoCategory) REQUIRE (n.project_id, n.name) IS UNIQUE"
+    )
+    graph.run(unique_name)
+
+    url_idx = (
+        "CREATE INDEX index_repocategory_url IF NOT EXISTS "
+        "FOR (n:RepoCategory) ON (n.url)"
+    )
+    graph.run(url_idx)
 
 
 def merge_renamed_files(graph, project_id):

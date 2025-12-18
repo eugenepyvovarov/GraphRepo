@@ -2,7 +2,7 @@ lizard
 pytz
 psutil
 py2neo
-pydriller==1.9.6
+pydriller==1.9.2
 requests
 pytest
 GitPython
@@ -10,3 +10,6 @@ PyYAML
 diskcache
 pika
 stomp.py
+pathspec
+grep_ast
+tree_sitter_language_pack

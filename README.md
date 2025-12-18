@@ -9,6 +9,38 @@ For a complete description, see the [online documentation](https://graphrepo.rea
   <img src="https://raw.githubusercontent.com/NullConvergence/GraphRepo/develop/docs/source/GraphRepoSchema.svg">
 </p>x
 
+### Working tree dependencies, keywords, and categories
+
+- Static imports/includes are parsed from the working tree (TS/JS/TSX/JSX, PHP) and stored as `(:File)-[:IMPORTS]->(:File)`.
+- Files gain a `keywords` list built from path tokens and top-level identifiers.
+- Categories are now namespaced under `(:RepoCategory {project_id, name, description, url})` with `(:File)-[:BELONGS_TO_REPO_CATEGORY]->(:RepoCategory)`; an “Other” category per project is always ensured. This avoids collisions with any existing `Category` label you may have.
+- Helpers live in `graphrepo/drillers/deps.py` and `graphrepo/drillers/categories.py`. Batch MERGE utilities for the new nodes/edges are in `graphrepo/drillers/batch_utils.py`.
+
+CLI (python -m graphrepo.cli):
+
+```
+# Git history drill (existing behaviour)
+python -m graphrepo.cli --config examples/configs/graphrepo.yml --run-history
+
+# Static deps + keywords
+python -m graphrepo.cli --config examples/configs/graphrepo.yml --run-deps
+
+# Merge categories and file->category links from JSON payloads
+python -m graphrepo.cli --config examples/configs/graphrepo.yml \
+  --categorize \
+  --categories-json categories.json \
+  --assignments-json assignments.json
+
+# Generate categories for new routes (requires a category_generator when used programmatically)
+python -m graphrepo.cli --config examples/configs/graphrepo.yml \
+  --auto-categories --routes routes.json
+```
+
+JSON formats:
+- categories.json: `[{"name": "Tasks", "description": "...", "url": "/tasks"}, ...]`
+- assignments.json: `[{"path": "src/tasks/index.tsx", "category": "Tasks", "confidence": 0.8}, ...]` (you can also pass `merge_hash`/`hash` instead of `path`).
+Routes JSON should be an array of route strings (e.g., `["/files", "/tasks"]`). When calling `CategoryManager.auto_categories` directly, provide a `category_generator(routes) -> List[CategorySpec]` that uses your GPT integration.
+
 ###  1. Installation & First run
 
 #### 1.1 Prereq
